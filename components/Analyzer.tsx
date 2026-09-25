@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, Link2, Loader2, RotateCcw, Sigma } from "lucide-react";
+import {
+  AlertCircle,
+  FileText,
+  Link2,
+  Loader2,
+  RotateCcw,
+  Sigma,
+} from "lucide-react";
 
 import ActionButtons from "@/components/ActionButtons";
 import CandidateInfo from "@/components/CandidateInfo";
@@ -10,7 +17,7 @@ import FileDropzone from "@/components/FileDropzone";
 import ResultTable from "@/components/ResultTable";
 import SaveSheetGuide from "@/components/SaveSheetGuide";
 import ScoreTile from "@/components/ScoreTile";
-import { DEFAULT_EXAM_ID } from "@/lib/exams";
+import { DEFAULT_EXAM_ID, EXAM_SCHEMES } from "@/lib/exams";
 import {
   fetchSheetHtml,
   SheetFetchError,
@@ -32,6 +39,7 @@ export default function Analyzer() {
   const [failures, setFailures] = useState<FetchFailure[]>([]);
 
   const busy = status === "loading";
+  const scheme = EXAM_SCHEMES.rrb;
 
   async function run(html: string) {
     const parsed: AnalysisResult = parseSheetHtml(html);
@@ -104,6 +112,12 @@ export default function Analyzer() {
                 <p className="text-xs text-slate-500">TCS iON &amp; Digialm sheets</p>
               </div>
             </div>
+            {file ? (
+              <span className="hidden max-w-[14rem] items-center gap-1.5 truncate rounded-full border border-[#222f47] bg-[#0f1523] px-3 py-1.5 text-xs text-slate-400 sm:inline-flex">
+                <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span className="truncate">{file.name}</span>
+              </span>
+            ) : null}
             {result ? (
               <button
                 type="button"
@@ -118,72 +132,66 @@ export default function Analyzer() {
 
           <form
             onSubmit={handleSubmit}
-            className="mt-4 grid gap-3 lg:grid-cols-[200px_1fr_auto] lg:items-end"
+            className="mt-4 flex flex-col gap-2.5"
           >
-            <ExamSelector
-              value={examId}
-              onChange={setExamId}
-              detected={result?.detectedScheme ?? null}
-              disabled={busy}
-            />
-
-            <div className="flex flex-col gap-2">
-              <label
-                htmlFor="sheet-url"
-                className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-slate-400 uppercase"
-              >
-                <Link2 className="h-3.5 w-3.5" aria-hidden />
-                Response Sheet URL
-              </label>
-              <input
-                id="sheet-url"
-                type="url"
-                inputMode="url"
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                disabled={busy || Boolean(file)}
-                placeholder="https://rrb.digialm.com/.../response-sheet.html"
-                className={inputClass}
-              />
-              <p className="text-xs text-slate-500">
-                Optional. The exam portal blocks most hosted servers, so this often
-                fails on a public deployment.{" "}
-                <span className="text-slate-400">Dropping the file above always
-                works.</span>
-              </p>
-            </div>
-
-            <button
-              type="submit"
-              disabled={busy}
-              className="inline-flex h-[42px] items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {busy ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  Fetching…
-                </>
-              ) : (
-                "Calculate Marks"
-              )}
-            </button>
-
-            <div className="flex flex-col gap-3 lg:col-span-3">
-              <FileDropzone
-                onFile={(next) => {
-                  setFile(next);
-                  setUrl("");
-                  setError(null);
-                }}
-                onClear={() => {
-                  setFile(null);
-                  setError(null);
-                }}
-                fileName={file?.name ?? null}
+            <div className="grid gap-3 lg:grid-cols-[210px_1fr_auto] lg:items-end">
+              <ExamSelector
+                value={examId}
+                onChange={setExamId}
                 disabled={busy}
               />
-              <SaveSheetGuide />
+
+              <div className="flex flex-col gap-2">
+                <label
+                  htmlFor="sheet-url"
+                  className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-slate-400 uppercase"
+                >
+                  <Link2 className="h-3.5 w-3.5" aria-hidden />
+                  Response Sheet URL
+                </label>
+                <input
+                  id="sheet-url"
+                  type="url"
+                  inputMode="url"
+                  value={url}
+                  onChange={(event) => setUrl(event.target.value)}
+                  disabled={busy || Boolean(file)}
+                  placeholder="https://rrb.digialm.com/.../response-sheet.html"
+                  className={inputClass}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={busy}
+                className="inline-flex h-[42px] items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {busy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Fetching…
+                  </>
+                ) : (
+                  "Calculate Marks"
+                )}
+              </button>
             </div>
+
+            <p className="text-xs text-slate-500">
+              {scheme.correct} mark per correct answer,{" "}
+              {scheme.negative.toFixed(3)} negative per wrong answer.
+              {result?.detectedScheme ? (
+                <span className="text-emerald-400">
+                  {" "}
+                  This sheet states +{result.detectedScheme.correct} / −
+                  {result.detectedScheme.negative.toFixed(3)}.
+                </span>
+              ) : null}{" "}
+              <span className="text-slate-400">
+                The URL is optional and the portal blocks most hosted servers —
+                dropping a file always works.
+              </span>
+            </p>
           </form>
         </div>
       </header>
@@ -223,8 +231,25 @@ export default function Analyzer() {
           </div>
         ) : null}
 
+        <div className="flex flex-col gap-3">
+          <FileDropzone
+            onFile={(next) => {
+              setFile(next);
+              setUrl("");
+              setError(null);
+            }}
+            onClear={() => {
+              setFile(null);
+              setError(null);
+            }}
+            fileName={file?.name ?? null}
+            disabled={busy}
+          />
+          <SaveSheetGuide />
+        </div>
+
         {result ? (
-          <div className="flex flex-col gap-5">
+          <div className="mt-5 flex flex-col gap-5">
             {result.warnings.length > 0 ? (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
                 <p className="text-xs font-semibold tracking-wide text-amber-400 uppercase">
@@ -250,22 +275,7 @@ export default function Analyzer() {
 
             <ActionButtons />
           </div>
-        ) : (
-          !error && (
-            <div className="rounded-xl border border-dashed border-[#222f47] bg-[#151c2c] px-6 py-16 text-center">
-              <Sigma className="mx-auto h-8 w-8 text-slate-600" aria-hidden />
-              <h2 className="mt-3 text-sm font-semibold text-slate-300">
-                No response sheet loaded
-              </h2>
-              <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
-                Save your response sheet as an{" "}
-                <span className="font-mono">.html</span> file and drop it in the
-                box above, then press Calculate Marks. Not sure how to save it? The
-                box above has step-by-step instructions.
-              </p>
-            </div>
-          )
-        )}
+        ) : null}
       </main>
 
       <footer className="border-t border-[#222f47] px-4 py-4">
