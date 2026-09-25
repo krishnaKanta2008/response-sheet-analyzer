@@ -8,6 +8,7 @@ import CandidateInfo from "@/components/CandidateInfo";
 import ExamSelector from "@/components/ExamSelector";
 import FileDropzone from "@/components/FileDropzone";
 import ResultTable from "@/components/ResultTable";
+import SaveSheetGuide from "@/components/SaveSheetGuide";
 import ScoreTile from "@/components/ScoreTile";
 import { DEFAULT_EXAM_ID } from "@/lib/exams";
 import {
@@ -144,6 +145,12 @@ export default function Analyzer() {
                 placeholder="https://rrb.digialm.com/.../response-sheet.html"
                 className={inputClass}
               />
+              <p className="text-xs text-slate-500">
+                Optional. The exam portal blocks most hosted servers, so this often
+                fails on a public deployment.{" "}
+                <span className="text-slate-400">Dropping the file above always
+                works.</span>
+              </p>
             </div>
 
             <button
@@ -161,7 +168,7 @@ export default function Analyzer() {
               )}
             </button>
 
-            <div className="lg:col-span-3">
+            <div className="flex flex-col gap-3 lg:col-span-3">
               <FileDropzone
                 onFile={(next) => {
                   setFile(next);
@@ -175,6 +182,7 @@ export default function Analyzer() {
                 fileName={file?.name ?? null}
                 disabled={busy}
               />
+              <SaveSheetGuide />
             </div>
           </form>
         </div>
@@ -205,9 +213,11 @@ export default function Analyzer() {
               ) : null}
               <p className="mt-2 text-xs text-slate-400">
                 The exam portal blocks datacenter servers, so URL fetching depends on
-                which proxy is reachable. Saving the sheet from your browser and
-                dropping the <span className="font-mono text-slate-300">.html</span>{" "}
-                file above always works — that path never touches the network.
+                which proxy is reachable. Use the{" "}
+                <span className="text-slate-300">How do I save my response sheet?</span>{" "}
+                steps above and drop the{" "}
+                <span className="font-mono text-slate-300">.html</span> file in — that
+                path never touches the network.
               </p>
             </div>
           </div>
@@ -248,8 +258,10 @@ export default function Analyzer() {
                 No response sheet loaded
               </h2>
               <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
-                Drop a saved response sheet <span className="font-mono">.html</span>{" "}
-                file above, or paste its URL, then press Calculate Marks.
+                Save your response sheet as an{" "}
+                <span className="font-mono">.html</span> file and drop it in the
+                box above, then press Calculate Marks. Not sure how to save it? The
+                box above has step-by-step instructions.
               </p>
             </div>
           )

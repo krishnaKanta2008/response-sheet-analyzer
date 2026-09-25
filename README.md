@@ -29,6 +29,18 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## How to use it
+
+**Save your response sheet as an `.html` file, then drop it in.** The in-app guide
+has the same steps. In short, on a computer: open the response sheet while logged
+in, press `Ctrl + S` (`Cmd + S` on Mac), choose **Webpage, HTML Only** (Chrome /
+Edge) or **Webpage, HTML** (Firefox) or **Webpage, Single File** (Safari), then
+drop the resulting file into the upload box and press Calculate Marks.
+
+Phone browsers generally cannot save a page as a usable `.html` file — see the
+mobile section of the in-app guide. Parsing happens entirely in the browser;
+nothing is uploaded.
+
 ## Scripts
 
 | Command | Purpose |
