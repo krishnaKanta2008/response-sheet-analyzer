@@ -57,6 +57,50 @@ opening `<tr>`, and the header labels carry no trailing colon — so cells are
 read positionally rather than by row. The candidate's photograph is a ~260 KB
 base64 data URI and is stripped before parsing.
 
+## Why URL fetching needs a proxy — and sometimes two
+
+The exam portals sit behind Akamai and send **no `access-control-allow-origin`**,
+so a browser cannot fetch them directly. Some server-side egress is required.
+
+The catch is that the same WAF **blocks datacenter IP ranges**. A Vercel
+function egresses from AWS EC2, and tcs iON answers it with:
+
+```
+400 Bad Request: 403 tcs iON 403 Sorry for the inconvenience...
+Client IP Address 32.196.135.248   (ec2-32-196-135-248.compute-1.amazonaws.com)
+```
+
+No request header can fix an IP-reputation block. So `lib/fetchSheet.ts` tries
+each configured egress in turn and uses the first that succeeds:
+
+1. **`NEXT_PUBLIC_SHEET_PROXY_URL`** — a Cloudflare Worker (see `worker/`),
+   preferred because Cloudflare's egress is not AWS
+2. **`/api/fetch-sheet`** — the in-app route
+
+If both fail, the error names each source it tried and why it failed.
+
+### Deploying the Cloudflare Worker
+
+```bash
+cd worker
+npx wrangler deploy
+```
+
+Then set `NEXT_PUBLIC_SHEET_PROXY_URL` in your Vercel project settings (and
+redeploy) to the printed `https://response-sheet-proxy.<subdomain>.workers.dev`
+URL. With no variable set, the app simply uses the in-app route.
+
+Both proxies share identical guard rails:
+
+- only `digialm.com`, `tcsion.com`, `tcs.com`, `nta.ac.in`, `nta.nic.in`
+- re-checks the host after redirects
+- requires an HTML-like content type, 20 s timeout, 8 MB cap
+- rejects pages containing no question panels
+- never logs the request URL, which embeds the candidate's roll number
+
+**File upload is unaffected by all of this** and is the most reliable input: it
+never makes a network request.
+
 ## The proxy route
 
 `app/api/fetch-sheet` exists because the exam portals send no CORS headers, so
@@ -68,7 +112,9 @@ the browser cannot read them directly. It is deliberately narrow:
 - never logs the request URL, which embeds the candidate's roll number
 
 Deploy it somewhere that does not permit outbound requests to internal
-networks, or remove the route and use file upload only.
+networks, or remove the route and use file upload only. See
+[Why URL fetching needs a proxy](#why-url-fetching-needs-a-proxy--and-sometimes-two)
+for why one proxy often is not enough.
 
 ## Verification
 

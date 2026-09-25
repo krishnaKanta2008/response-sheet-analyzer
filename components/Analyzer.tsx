@@ -10,6 +10,11 @@ import FileDropzone from "@/components/FileDropzone";
 import ResultTable from "@/components/ResultTable";
 import ScoreTile from "@/components/ScoreTile";
 import { DEFAULT_EXAM_ID } from "@/lib/exams";
+import {
+  fetchSheetHtml,
+  SheetFetchError,
+  type FetchFailure,
+} from "@/lib/fetchSheet";
 import { parseSheetHtml } from "@/lib/htmlParser";
 import { useResult } from "@/lib/result-context";
 import type { AnalysisResult } from "@/lib/types";
@@ -23,7 +28,7 @@ export default function Analyzer() {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [detail, setDetail] = useState<string | null>(null);
+  const [failures, setFailures] = useState<FetchFailure[]>([]);
 
   const busy = status === "loading";
 
@@ -40,7 +45,7 @@ export default function Analyzer() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setDetail(null);
+    setFailures([]);
 
     if (!file && !url.trim()) {
       setError("Drop a response sheet file or paste a response sheet URL.");
@@ -52,28 +57,21 @@ export default function Analyzer() {
       if (file) {
         await run(await file.text());
       } else {
-        const response = await fetch(
-          `/api/fetch-sheet?url=${encodeURIComponent(url.trim())}`,
-        );
-        const payload = (await response.json()) as {
-          html?: string;
-          error?: string;
-          detail?: string;
-        };
-        if (!response.ok || !payload.html) {
-          if (payload.detail) setDetail(payload.detail);
-          throw new Error(
-            payload.error ?? `Could not fetch that URL (${response.status}).`,
-          );
-        }
-        await run(payload.html);
+        await run(await fetchSheetHtml(url.trim()));
       }
       setStatus("idle");
     } catch (caught) {
       setStatus("error");
-      setError(
-        caught instanceof Error ? caught.message : "Something went wrong while parsing.",
-      );
+      if (caught instanceof SheetFetchError) {
+        setError(caught.message);
+        setFailures(caught.failures);
+      } else {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Something went wrong while parsing.",
+        );
+      }
     }
   }
 
@@ -81,7 +79,7 @@ export default function Analyzer() {
     setFile(null);
     setUrl("");
     setError(null);
-    setDetail(null);
+    setFailures([]);
     setStatus("idle");
     clear();
   }
@@ -191,16 +189,25 @@ export default function Analyzer() {
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" aria-hidden />
             <div className="min-w-0">
               <p className="text-sm text-red-200">{error}</p>
-              {detail ? (
-                <p className="mt-1 break-words font-mono text-xs text-red-300/70">
-                  {detail}
-                </p>
+              {failures.length > 0 ? (
+                <ul className="mt-2 space-y-1.5">
+                  {failures.map((failure) => (
+                    <li
+                      key={failure.source}
+                      className="break-words font-mono text-xs text-red-300/70"
+                    >
+                      <span className="text-red-300/90">[{failure.source}]</span>{" "}
+                      {failure.message}
+                      {failure.detail ? ` — ${failure.detail}` : ""}
+                    </li>
+                  ))}
+                </ul>
               ) : null}
               <p className="mt-2 text-xs text-slate-400">
-                The exam portal may be blocking this server. You can still save the
-                response sheet from your browser and drop the{" "}
-                <span className="font-mono text-slate-300">.html</span> file above — that
-                path never touches the network.
+                The exam portal blocks datacenter servers, so URL fetching depends on
+                which proxy is reachable. Saving the sheet from your browser and
+                dropping the <span className="font-mono text-slate-300">.html</span>{" "}
+                file above always works — that path never touches the network.
               </p>
             </div>
           </div>
