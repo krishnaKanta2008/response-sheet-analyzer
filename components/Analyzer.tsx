@@ -23,6 +23,7 @@ export default function Analyzer() {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
 
   const busy = status === "loading";
 
@@ -39,6 +40,7 @@ export default function Analyzer() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setDetail(null);
 
     if (!file && !url.trim()) {
       setError("Drop a response sheet file or paste a response sheet URL.");
@@ -53,9 +55,16 @@ export default function Analyzer() {
         const response = await fetch(
           `/api/fetch-sheet?url=${encodeURIComponent(url.trim())}`,
         );
-        const payload = (await response.json()) as { html?: string; error?: string };
+        const payload = (await response.json()) as {
+          html?: string;
+          error?: string;
+          detail?: string;
+        };
         if (!response.ok || !payload.html) {
-          throw new Error(payload.error ?? `Could not fetch that URL (${response.status}).`);
+          if (payload.detail) setDetail(payload.detail);
+          throw new Error(
+            payload.error ?? `Could not fetch that URL (${response.status}).`,
+          );
         }
         await run(payload.html);
       }
@@ -72,6 +81,7 @@ export default function Analyzer() {
     setFile(null);
     setUrl("");
     setError(null);
+    setDetail(null);
     setStatus("idle");
     clear();
   }
@@ -179,7 +189,20 @@ export default function Analyzer() {
             className="mb-5 flex items-start gap-2.5 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3"
           >
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" aria-hidden />
-            <p className="text-sm text-red-200">{error}</p>
+            <div className="min-w-0">
+              <p className="text-sm text-red-200">{error}</p>
+              {detail ? (
+                <p className="mt-1 break-words font-mono text-xs text-red-300/70">
+                  {detail}
+                </p>
+              ) : null}
+              <p className="mt-2 text-xs text-slate-400">
+                The exam portal may be blocking this server. You can still save the
+                response sheet from your browser and drop the{" "}
+                <span className="font-mono text-slate-300">.html</span> file above — that
+                path never touches the network.
+              </p>
+            </div>
           </div>
         ) : null}
 
