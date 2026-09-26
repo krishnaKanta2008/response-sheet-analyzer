@@ -6,8 +6,13 @@
  * egress in turn. The first success wins; every attempt's error is kept so a
  * total failure can explain what was actually tried.
  *
- * Order matters: the Cloudflare Worker egress is tried first because the
- * Next.js route runs on AWS EC2, which tcs iON is known to reject.
+ * Order matters: externally hosted proxies are tried first, because the
+ * Next.js route runs on AWS EC2, which tcs iON is known to reject. That route
+ * stays last since it is the one that works on localhost and on any
+ * non-datacenter deployment.
+ *
+ * Configure extra proxies with a comma-separated list:
+ *   NEXT_PUBLIC_SHEET_PROXY_URL=https://a.workers.dev,http://localhost:8787
  */
 
 export interface FetchFailure {
@@ -32,19 +37,47 @@ interface ProxyResponse {
   detail?: string;
 }
 
-function proxyTargets(sheetUrl: string): Array<{ label: string; endpoint: string }> {
+/** Generous enough for a 600 KB sheet on a cold serverless start. */
+const TIMEOUT_MS = 30_000;
+
+function labelFor(index: number, total: number): string {
+  if (total === 1) return "configured proxy";
+  return `proxy ${index + 1}`;
+}
+
+function proxyTargets(
+  sheetUrl: string,
+): Array<{ label: string; endpoint: string }> {
   const query = `?url=${encodeURIComponent(sheetUrl)}`;
   const targets: Array<{ label: string; endpoint: string }> = [];
 
-  const worker = process.env.NEXT_PUBLIC_SHEET_PROXY_URL;
-  if (worker) {
+  const configured = (process.env.NEXT_PUBLIC_SHEET_PROXY_URL ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  configured.forEach((base, index) => {
     targets.push({
-      label: "Cloudflare Worker",
-      endpoint: `${worker.replace(/\/$/, "")}${query}`,
+      label: labelFor(index, configured.length),
+      endpoint: `${base.replace(/\/$/, "")}${query}`,
     });
-  }
+  });
+
   targets.push({ label: "app server", endpoint: `/api/fetch-sheet${query}` });
   return targets;
+}
+
+/** A hanging proxy must not stall the whole attempt. */
+async function fetchWithTimeout(
+  endpoint: string,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    return await fetch(endpoint, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function fetchSheetHtml(sheetUrl: string): Promise<string> {
@@ -52,7 +85,7 @@ export async function fetchSheetHtml(sheetUrl: string): Promise<string> {
 
   for (const { label, endpoint } of proxyTargets(sheetUrl)) {
     try {
-      const response = await fetch(endpoint);
+      const response = await fetchWithTimeout(endpoint);
       let payload: ProxyResponse;
       try {
         payload = (await response.json()) as ProxyResponse;
@@ -62,12 +95,16 @@ export async function fetchSheetHtml(sheetUrl: string): Promise<string> {
 
       if (response.ok && payload.html) return payload.html;
 
-      const message = payload.error ?? `request failed (${response.status})`;
-      failures.push({ source: label, message, detail: payload.detail });
-    } catch (caught) {
       failures.push({
         source: label,
-        message: caught instanceof Error ? caught.message : "unreachable",
+        message: payload.error ?? `request failed (${response.status})`,
+        detail: payload.detail,
+      });
+    } catch (caught) {
+      const aborted = caught instanceof Error && caught.name === "AbortError";
+      failures.push({
+        source: label,
+        message: aborted ? "timed out" : "unreachable",
       });
     }
   }

@@ -50,6 +50,7 @@ nothing is uploaded.
 | `npm start` | Serve the production build |
 | `npm run lint` | ESLint over `app`, `components`, `lib`, `scripts` |
 | `npm run verify:parse -- <sheet.html>` | Parse a saved sheet and assert the expected values |
+| `npm run proxy` | Start the standalone fetch proxy on `:8787` |
 
 ## How parsing works
 
@@ -69,29 +70,60 @@ opening `<tr>`, and the header labels carry no trailing colon — so cells are
 read positionally rather than by row. The candidate's photograph is a ~260 KB
 base64 data URI and is stripped before parsing.
 
-## Why URL fetching needs a proxy — and sometimes two
+## Why URL fetching needs a proxy — and sometimes more than one
 
-The exam portals sit behind Akamai and send **no `access-control-allow-origin`**,
-so a browser cannot fetch them directly. Some server-side egress is required.
+The exam portals sit behind Akamai and send **no `access-control-allow-origin`**
+(verified against four Origin/preflight variants), so a browser cannot read them
+directly. Some server-side egress is required.
 
-The catch is that the same WAF **blocks datacenter IP ranges**. A Vercel
-function egresses from AWS EC2, and tcs iON answers it with:
+The catch is that the same WAF **blocks datacenter IP ranges**. A Vercel function
+egresses from AWS EC2, and tcs iON answers it with:
 
 ```
 400 Bad Request: 403 tcs iON 403 Sorry for the inconvenience...
 Client IP Address 32.196.135.248   (ec2-32-196-135-248.compute-1.amazonaws.com)
 ```
 
-No request header can fix an IP-reputation block. So `lib/fetchSheet.ts` tries
-each configured egress in turn and uses the first that succeeds:
+No request header can fix an IP-reputation block. Note that **on localhost the
+in-app route works fine** — the portal only rejects datacenter egress. It fails
+on some hosted platforms because of where they run, not because of the code.
 
-1. **`NEXT_PUBLIC_SHEET_PROXY_URL`** — a Cloudflare Worker (see `worker/`),
-   preferred because Cloudflare's egress is not AWS
-2. **`/api/fetch-sheet`** — the in-app route
+`lib/fetchSheet.ts` therefore tries each egress in turn and uses the first that
+succeeds, with a 30 s timeout per attempt so a hanging source cannot stall the
+rest:
 
-If both fail, the error names each source it tried and why it failed.
+1. Each URL in **`NEXT_PUBLIC_SHEET_PROXY_URL`** (comma-separated, tried in
+   order)
+2. **`/api/fetch-sheet`** — the in-app route, tried last because it is the one
+   that works on localhost and on non-datacenter hosts
 
-### Deploying the Cloudflare Worker
+If everything fails, the error names each source it tried and why.
+
+### Option A — the in-app route (default, no setup)
+
+`/api/fetch-sheet` works out of the box on localhost and on any deployment that
+is not on a blocked range. Nothing to configure.
+
+### Option B — the standalone proxy, on any host
+
+`scripts/proxy-server.mjs` is a single dependency-free file, so it can run
+anywhere that is not blocked — a VPS, a home machine behind a tunnel, Fly.io,
+Render, Railway, Deno Deploy:
+
+```bash
+npm run proxy                       # listens on :8787
+PORT=9000 npm run proxy             # or pick a port
+```
+
+Locally, point the app at it:
+
+```bash
+NEXT_PUBLIC_SHEET_PROXY_URL=http://localhost:8787 npm run dev
+```
+
+A `GET /health` endpoint confirms it is up without touching the network.
+
+### Option C — the Cloudflare Worker
 
 ```bash
 cd worker
@@ -102,7 +134,7 @@ Then set `NEXT_PUBLIC_SHEET_PROXY_URL` in your Vercel project settings (and
 redeploy) to the printed `https://response-sheet-proxy.<subdomain>.workers.dev`
 URL. With no variable set, the app simply uses the in-app route.
 
-Both proxies share identical guard rails:
+All three proxies share identical guard rails:
 
 - only `digialm.com`, `tcsion.com`, `tcs.com`, `nta.ac.in`, `nta.nic.in`
 - re-checks the host after redirects

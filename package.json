@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint app components lib scripts",
-    "verify:parse": "node scripts/verify-parse.mjs"
+    "verify:parse": "node scripts/verify-parse.mjs",
+    "proxy": "node scripts/proxy-server.mjs"
   },
   "dependencies": {
     "axios": "^1.20.0",
