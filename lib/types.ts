@@ -1,4 +1,4 @@
-export type ExamId = "rrb" | "custom";
+export type ExamId = "rrb";
 
 /** A marking scheme. `negative` is stored as a positive magnitude. */
 export interface MarkingScheme {

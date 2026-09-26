@@ -8,8 +8,11 @@ or uploaded anywhere.
 
 ## Features
 
-- **Two ways in** — drop a saved `.html` response sheet, or paste its URL. URLs
-  are fetched through a locked-down proxy route (see below).
+- **File upload** — drop a saved `.html` response sheet. Works everywhere and
+  never touches the network.
+- **URL fetching** — paste the sheet's URL instead. Requires a server-side proxy
+  and a host the exam portal does not block, so it works on localhost but not on
+  every platform (see [below](#why-url-fetching-needs-a-proxy)).
 - **Automatic marking scheme** — the sheet states its own rules ("Correct Answer
   will carry 1 mark… Incorrect Answer will carry 1/3 Negative mark…"), so the
   scheme is read from the document rather than hardcoded.
@@ -70,7 +73,7 @@ opening `<tr>`, and the header labels carry no trailing colon — so cells are
 read positionally rather than by row. The candidate's photograph is a ~260 KB
 base64 data URI and is stripped before parsing.
 
-## Why URL fetching needs a proxy — and sometimes more than one
+## Why URL fetching needs a proxy
 
 The exam portals sit behind Akamai and send **no `access-control-allow-origin`**
 (verified against four Origin/preflight variants), so a browser cannot read them
@@ -84,9 +87,9 @@ egresses from AWS EC2, and tcs iON answers it with:
 Client IP Address 32.196.135.248   (ec2-32-196-135-248.compute-1.amazonaws.com)
 ```
 
-No request header can fix an IP-reputation block. Note that **on localhost the
-in-app route works fine** — the portal only rejects datacenter egress. It fails
-on some hosted platforms because of where they run, not because of the code.
+No request header can fix an IP-reputation block. **On localhost the in-app
+route works fine** — the portal only rejects datacenter egress, so this is about
+where the code runs, not about the code.
 
 `lib/fetchSheet.ts` therefore tries each egress in turn and uses the first that
 succeeds, with a 30 s timeout per attempt so a hanging source cannot stall the
@@ -99,12 +102,12 @@ rest:
 
 If everything fails, the error names each source it tried and why.
 
-### Option A — the in-app route (default, no setup)
+### The in-app route (default, no setup)
 
 `/api/fetch-sheet` works out of the box on localhost and on any deployment that
 is not on a blocked range. Nothing to configure.
 
-### Option B — the standalone proxy, on any host
+### The standalone proxy, for any other host
 
 `scripts/proxy-server.mjs` is a single dependency-free file, so it can run
 anywhere that is not blocked — a VPS, a home machine behind a tunnel, Fly.io,
@@ -123,18 +126,21 @@ NEXT_PUBLIC_SHEET_PROXY_URL=http://localhost:8787 npm run dev
 
 A `GET /health` endpoint confirms it is up without touching the network.
 
-### Option C — the Cloudflare Worker
+### The Cloudflare Worker (optional, not deployed)
+
+`worker/` holds a Cloudflare Worker with the same logic, kept for the case where
+you want URL fetching to work on a **hosted** platform. Vercel egresses from AWS
+EC2 and gets blocked; Cloudflare is a different network, so it may not be. This
+has never been deployed or tested, so treat it as unproven.
 
 ```bash
-cd worker
-npx wrangler deploy
+cd worker && npx wrangler deploy
 ```
 
-Then set `NEXT_PUBLIC_SHEET_PROXY_URL` in your Vercel project settings (and
-redeploy) to the printed `https://response-sheet-proxy.<subdomain>.workers.dev`
-URL. With no variable set, the app simply uses the in-app route.
+Then set `NEXT_PUBLIC_SHEET_PROXY_URL` in your platform's environment variables
+and redeploy. It needs a Cloudflare account.
 
-All three proxies share identical guard rails:
+Both proxies share identical guard rails:
 
 - only `digialm.com`, `tcsion.com`, `tcs.com`, `nta.ac.in`, `nta.nic.in`
 - re-checks the host after redirects
@@ -142,23 +148,12 @@ All three proxies share identical guard rails:
 - rejects pages containing no question panels
 - never logs the request URL, which embeds the candidate's roll number
 
+If you deploy the app somewhere that permits outbound requests to internal
+networks, remove `/api/fetch-sheet` and rely on file upload and the standalone
+proxy.
+
 **File upload is unaffected by all of this** and is the most reliable input: it
 never makes a network request.
-
-## The proxy route
-
-`app/api/fetch-sheet` exists because the exam portals send no CORS headers, so
-the browser cannot read them directly. It is deliberately narrow:
-
-- only `digialm.com`, `tcsion.com`, `tcs.com`, `nta.ac.in`, `nta.nic.in`
-- re-checks the host after redirects
-- requires an HTML-like content type, 15 s timeout, 8 MB cap
-- never logs the request URL, which embeds the candidate's roll number
-
-Deploy it somewhere that does not permit outbound requests to internal
-networks, or remove the route and use file upload only. See
-[Why URL fetching needs a proxy](#why-url-fetching-needs-a-proxy--and-sometimes-two)
-for why one proxy often is not enough.
 
 ## Verification
 
@@ -172,9 +167,9 @@ npm run verify:parse -- path/to/sheet.html
 
 ## Scope
 
-RRB marking (+1 / −⅓) is implemented and tested. `lib/exams.ts` is structured so
-other schemes (JEE Main, SSC) and custom marking are small additions, but they
-are not yet wired up or verified against real sheets.
+RRB marking (+1 / −⅓) is implemented and tested against a real RRB NTPC CBT II
+sheet. Other schemes (JEE Main, SSC) and NTA response sheets are not supported:
+the markup differs and none has been verified against a real sample.
 
 ## Disclaimer
 
